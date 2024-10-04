@@ -1,184 +1,134 @@
-I understand that this process might be overwhelming or not working for you as intended. Let's simplify things and focus on getting a URL shortener working step-by-step. I'll guide you through a very basic setup that should be easier to follow.
+Creating a short URL service with expiration dates on a Debian 11 VPS can be achieved using various programming languages and frameworks. Below, I'll provide a basic example using Python with the Flask framework, along with the necessary steps to set it up on your VPS.
 
-### Simple Setup for a URL Shortener on Debian 11
+### Step 1: Install Required Software
 
-#### **Step 1: Basic Setup**
-
-1. **Connect to Your VPS:**
-   Make sure you are connected to your Debian 11 VPS via SSH.
-
-2. **Update Your System:**
-   First, update your package list and upgrade installed packages:
-
+1. **Update the package list and install Python 3, pip, and virtualenv:**
    ```bash
    sudo apt update
-   sudo apt upgrade -y
+   sudo apt install python3 python3-pip python3-venv -y
    ```
 
-3. **Install Node.js and npm:**
-   If Node.js is not installed, run the following commands to install it:
-
+2. **Install Flask and other required packages:**
    ```bash
-   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-   sudo apt install -y nodejs
+   pip3 install Flask Flask-SQLAlchemy Flask-Migrate
    ```
 
-4. **Verify the Installation:**
-   Check the installed versions of Node.js and npm:
+### Step 2: Create the Short URL Script
 
+1. **Create a project directory:**
    ```bash
-   node -v
-   npm -v
+   mkdir url_shortener
+   cd url_shortener
    ```
 
-#### **Step 2: Create Your URL Shortener Project**
-
-1. **Create a Project Directory:**
-   Create a directory for your project and navigate into it:
-
+2. **Create a virtual environment (optional but recommended):**
    ```bash
-   mkdir shorturl && cd shorturl
+   python3 -m venv venv
+   source venv/bin/activate
    ```
 
-2. **Initialize a New Node.js Project:**
-   Run the following command to create a `package.json` file:
-
+3. **Create a new file named `app.py`:**
    ```bash
-   npm init -y
+   touch app.py
+   nano app.py
    ```
 
-3. **Install Required Packages:**
-   Install `express`, `mongoose`, `nanoid`, and `body-parser`:
+4. **Add the following code to `app.py`:**
 
+   ```python
+   from flask import Flask, request, redirect, jsonify
+   from flask_sqlalchemy import SQLAlchemy
+   from datetime import datetime, timedelta
+   import string
+   import random
+
+   app = Flask(__name__)
+   app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///urls.db'
+   db = SQLAlchemy(app)
+
+   class URL(db.Model):
+       id = db.Column(db.Integer, primary_key=True)
+       short_url = db.Column(db.String(10), unique=True, nullable=False)
+       original_url = db.Column(db.String(255), nullable=False)
+       expiry_date = db.Column(db.DateTime, nullable=False)
+
+   db.create_all()
+
+   def generate_short_url():
+       return ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+
+   @app.route('/shorten', methods=['POST'])
+   def shorten_url():
+       data = request.get_json()
+       original_url = data['url']
+       expiry_minutes = data.get('expiry_minutes', 60)
+
+       short_url = generate_short_url()
+       expiry_date = datetime.now() + timedelta(minutes=expiry_minutes)
+
+       new_url = URL(short_url=short_url, original_url=original_url, expiry_date=expiry_date)
+       db.session.add(new_url)
+       db.session.commit()
+
+       return jsonify({'short_url': short_url, 'expiry_date': expiry_date.isoformat()})
+
+   @app.route('/<short_url>')
+   def redirect_to_url(short_url):
+       url = URL.query.filter_by(short_url=short_url).first()
+       if url and url.expiry_date > datetime.now():
+           return redirect(url.original_url)
+       else:
+           return "URL not found or has expired", 404
+
+   if __name__ == '__main__':
+       app.run(host='0.0.0.0', port=5000)
+   ```
+
+### Step 3: Run the Application
+
+1. **Run the Flask app:**
    ```bash
-   npm install express mongoose nanoid body-parser
+   python3 app.py
    ```
 
-#### **Step 3: Create the Server File**
+2. **Access the service:**
+   The service will run on `http://<your_server_ip>:5000`. You can use tools like Postman or `curl` to test the endpoints.
 
-1. **Create the Server File:**
-   Create a file named `server.js`:
+### Step 4: Test the Short URL Creation
 
+- **Create a short URL:**
+  Send a POST request to `http://<your_server_ip>:5000/shorten` with a JSON body like:
+  ```json
+  {
+      "url": "https://example.com",
+      "expiry_minutes": 30
+  }
+  ```
+
+- **Access the short URL:**
+  If the generated short URL is `abc123`, you can access it via `http://<your_server_ip>:5000/abc123`.
+
+### Step 5: Keep the Application Running
+
+For production use, consider using a WSGI server like **Gunicorn** or **uWSGI** in combination with **Nginx**. Here's a brief overview:
+
+1. **Install Gunicorn:**
    ```bash
-   touch server.js
+   pip install gunicorn
    ```
 
-2. **Edit `server.js`:**
-   Open `server.js` with a text editor (e.g., `nano`):
-
+2. **Run Gunicorn:**
    ```bash
-   nano server.js
+   gunicorn -w 4 app:app -b 0.0.0.0:5000
    ```
 
-   And paste in the following code:
+3. **Set up Nginx** (optional for reverse proxy and serving static files).
 
-   ```javascript
-   import express from 'express';
-   import mongoose from 'mongoose';
-   import { nanoid } from 'nanoid';
-   import bodyParser from 'body-parser';
+### Final Note
 
-   const app = express();
-   const PORT = process.env.PORT || 3000;
+This is a basic implementation. For a production environment, consider adding:
 
-   // Middleware
-   app.use(bodyParser.json());
-
-   // MongoDB connection (Replace with your MongoDB connection string)
-   mongoose.connect('mongodb://localhost:27017/shorturl', {
-       useNewUrlParser: true,
-       useUnifiedTopology: true
-   }).then(() => console.log('MongoDB connected'))
-   .catch(err => console.error(err));
-
-   // URL Schema
-   const urlSchema = new mongoose.Schema({
-       originalUrl: { type: String, required: true },
-       shortUrl: { type: String, required: true },
-       createdAt: { type: Date, default: Date.now, expires: '30d' } // Expires in 30 days
-   });
-
-   const Url = mongoose.model('Url', urlSchema);
-
-   // Create Short URL
-   app.post('/shorten', async (req, res) => {
-       const { originalUrl } = req.body;
-       const shortUrl = nanoid(8);
-       const newUrl = new Url({ originalUrl, shortUrl });
-       await newUrl.save();
-       res.json({ originalUrl, shortUrl: `http://localhost:${PORT}/${shortUrl}` });
-   });
-
-   // Redirect to original URL
-   app.get('/:shortUrl', async (req, res) => {
-       const { shortUrl } = req.params;
-       const urlEntry = await Url.findOne({ shortUrl });
-       if (urlEntry) {
-           res.redirect(urlEntry.originalUrl);
-       } else {
-           res.status(404).send('URL not found');
-       }
-   });
-
-   // Start server
-   app.listen(PORT, () => {
-       console.log(`Server is running on http://localhost:${PORT}`);
-   });
-   ```
-
-3. **Save and Exit:**
-   If you are using `nano`, press `CTRL + X`, then `Y`, and then `Enter` to save the file.
-
-#### **Step 4: Install and Start MongoDB (Optional)**
-
-If MongoDB is not installed, install it:
-
-1. **Install MongoDB:**
-
-   ```bash
-   sudo apt install -y mongodb
-   ```
-
-2. **Start MongoDB:**
-
-   ```bash
-   sudo systemctl start mongodb
-   sudo systemctl enable mongodb
-   ```
-
-#### **Step 5: Run Your URL Shortener**
-
-1. **Run the Server:**
-   In the terminal, run your server:
-
-   ```bash
-   node server.js
-   ```
-
-2. **Test the Shortener:**
-   Use tools like Postman or `curl` to test the API.
-
-   - To **shorten a URL**, send a POST request to `http://localhost:3000/shorten` with a JSON body:
-
-   ```json
-   {
-       "originalUrl": "https://www.example.com"
-   }
-   ```
-
-   - To **access the shortened URL**, use the returned short URL in your browser or `curl`.
-
-### Final Steps
-
-- **Accessing the API**: You can test your API endpoints using Postman or `curl` commands.
-  
-- **Checking MongoDB**: Use the MongoDB shell or a GUI tool to check the entries in your database if needed.
-
-### Troubleshooting
-
-If you run into any specific issues, please share:
-- The error message you encounter.
-- The commands you executed.
-- Your configuration details (like your `server.js` file, if you’ve modified it).
-
-Let's tackle this together step by step. If something doesn’t work, just let me know where you’re stuck!
+- Input validation and error handling.
+- Authentication for creating short URLs.
+- More persistent database options (e.g., PostgreSQL or MySQL).
+- Logging and monitoring.
