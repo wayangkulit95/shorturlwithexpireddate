@@ -1,178 +1,164 @@
-To install a URL shortening service with expiration dates on a Debian 11 VPS, you can create your own simple URL shortener using Node.js with Express and MongoDB, or you can use an existing open-source project. Here, I'll guide you through setting up a basic URL shortener from scratch. 
+I understand that this process might be overwhelming or not working for you as intended. Let's simplify things and focus on getting a URL shortener working step-by-step. I'll guide you through a very basic setup that should be easier to follow.
 
-### Step-by-Step Guide to Create a URL Shortener with Expiration Dates
+### Simple Setup for a URL Shortener on Debian 11
 
-#### Prerequisites
-1. **Node.js**: Ensure that you have Node.js installed on your Debian 11 system.
-2. **MongoDB**: You can install MongoDB locally or use a cloud database service.
-3. **npm**: This usually comes with Node.js.
+#### **Step 1: Basic Setup**
 
-#### Step 1: Update Your System
-First, ensure your Debian system is up to date:
+1. **Connect to Your VPS:**
+   Make sure you are connected to your Debian 11 VPS via SSH.
 
-```bash
-sudo apt update
-sudo apt upgrade -y
-```
+2. **Update Your System:**
+   First, update your package list and upgrade installed packages:
 
-#### Step 2: Install Node.js and npm
-If you haven't installed Node.js and npm, you can do so with the following commands:
+   ```bash
+   sudo apt update
+   sudo apt upgrade -y
+   ```
 
-```bash
-# Install curl if not already installed
-sudo apt install -y curl
+3. **Install Node.js and npm:**
+   If Node.js is not installed, run the following commands to install it:
 
-# Install Node.js from NodeSource (LTS version 18)
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
-```
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt install -y nodejs
+   ```
 
-#### Step 3: Install MongoDB
-You can install MongoDB using the following commands:
+4. **Verify the Installation:**
+   Check the installed versions of Node.js and npm:
 
-```bash
-# Import the public key used by the package management system
-wget -qO - https://www.mongodb.org/static/pgp/server-5.0.asc | sudo apt-key add -
+   ```bash
+   node -v
+   npm -v
+   ```
 
-# Create a list file for MongoDB
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/5.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-5.0.list
+#### **Step 2: Create Your URL Shortener Project**
 
-# Reload the local package database
-sudo apt update
-
-# Install MongoDB
-sudo apt install -y mongodb-org
-```
-
-After installing MongoDB, start and enable it:
-
-```bash
-sudo systemctl start mongod
-sudo systemctl enable mongod
-```
-
-#### Step 4: Set Up Your URL Shortener Project
-1. **Create a project directory**:
+1. **Create a Project Directory:**
+   Create a directory for your project and navigate into it:
 
    ```bash
    mkdir shorturl && cd shorturl
    ```
 
-2. **Initialize a new Node.js project**:
+2. **Initialize a New Node.js Project:**
+   Run the following command to create a `package.json` file:
 
    ```bash
    npm init -y
    ```
 
-3. **Install Required Packages**:
+3. **Install Required Packages:**
+   Install `express`, `mongoose`, `nanoid`, and `body-parser`:
 
    ```bash
-   npm install express mongoose nanoid body-parser dotenv
+   npm install express mongoose nanoid body-parser
    ```
 
-   - `express`: Framework for building web applications.
-   - `mongoose`: MongoDB object modeling tool.
-   - `nanoid`: For generating unique IDs.
-   - `body-parser`: Middleware to parse incoming request bodies.
-   - `dotenv`: For managing environment variables.
+#### **Step 3: Create the Server File**
 
-#### Step 5: Create the Main Application File
-1. **Create a file named `server.js`**:
+1. **Create the Server File:**
+   Create a file named `server.js`:
 
    ```bash
    touch server.js
    ```
 
-2. **Edit `server.js` and add the following code**:
+2. **Edit `server.js`:**
+   Open `server.js` with a text editor (e.g., `nano`):
 
-```javascript
-import express from 'express';
-import mongoose from 'mongoose';
-import { nanoid } from 'nanoid';
-import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
+   ```bash
+   nano server.js
+   ```
 
-dotenv.config();
+   And paste in the following code:
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+   ```javascript
+   import express from 'express';
+   import mongoose from 'mongoose';
+   import { nanoid } from 'nanoid';
+   import bodyParser from 'body-parser';
 
-// Middleware
-app.use(bodyParser.json());
+   const app = express();
+   const PORT = process.env.PORT || 3000;
 
-// MongoDB connection
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.log(err));
+   // Middleware
+   app.use(bodyParser.json());
 
-// URL Schema
-const urlSchema = new mongoose.Schema({
-    originalUrl: String,
-    shortUrl: String,
-    createdAt: { type: Date, default: Date.now, expires: '30d' }, // URL expires in 30 days
-});
+   // MongoDB connection (Replace with your MongoDB connection string)
+   mongoose.connect('mongodb://localhost:27017/shorturl', {
+       useNewUrlParser: true,
+       useUnifiedTopology: true
+   }).then(() => console.log('MongoDB connected'))
+   .catch(err => console.error(err));
 
-const Url = mongoose.model('Url', urlSchema);
+   // URL Schema
+   const urlSchema = new mongoose.Schema({
+       originalUrl: { type: String, required: true },
+       shortUrl: { type: String, required: true },
+       createdAt: { type: Date, default: Date.now, expires: '30d' } // Expires in 30 days
+   });
 
-// Create Short URL
-app.post('/shorten', async (req, res) => {
-    const { originalUrl } = req.body;
+   const Url = mongoose.model('Url', urlSchema);
 
-    const shortUrl = nanoid(8); // Generate a short ID
-    const newUrl = new Url({ originalUrl, shortUrl });
-    
-    await newUrl.save();
+   // Create Short URL
+   app.post('/shorten', async (req, res) => {
+       const { originalUrl } = req.body;
+       const shortUrl = nanoid(8);
+       const newUrl = new Url({ originalUrl, shortUrl });
+       await newUrl.save();
+       res.json({ originalUrl, shortUrl: `http://localhost:${PORT}/${shortUrl}` });
+   });
 
-    res.json({ originalUrl, shortUrl: `http://localhost:${PORT}/${shortUrl}` });
-});
+   // Redirect to original URL
+   app.get('/:shortUrl', async (req, res) => {
+       const { shortUrl } = req.params;
+       const urlEntry = await Url.findOne({ shortUrl });
+       if (urlEntry) {
+           res.redirect(urlEntry.originalUrl);
+       } else {
+           res.status(404).send('URL not found');
+       }
+   });
 
-// Redirect to original URL
-app.get('/:shortUrl', async (req, res) => {
-    const { shortUrl } = req.params;
-    const urlEntry = await Url.findOne({ shortUrl });
+   // Start server
+   app.listen(PORT, () => {
+       console.log(`Server is running on http://localhost:${PORT}`);
+   });
+   ```
 
-    if (urlEntry) {
-        res.redirect(urlEntry.originalUrl);
-    } else {
-        res.status(404).send('URL not found');
-    }
-});
+3. **Save and Exit:**
+   If you are using `nano`, press `CTRL + X`, then `Y`, and then `Enter` to save the file.
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
-```
+#### **Step 4: Install and Start MongoDB (Optional)**
 
-#### Step 6: Set Up Environment Variables
-1. **Create a `.env` file in your project directory**:
+If MongoDB is not installed, install it:
 
-```bash
-touch .env
-```
+1. **Install MongoDB:**
 
-2. **Edit the `.env` file and add your MongoDB connection string**:
+   ```bash
+   sudo apt install -y mongodb
+   ```
 
-```
-MONGODB_URI=mongodb://localhost:27017/shorturl
-PORT=3000
-```
+2. **Start MongoDB:**
 
-#### Step 7: Start Your Server
-Run your server:
+   ```bash
+   sudo systemctl start mongodb
+   sudo systemctl enable mongodb
+   ```
 
-```bash
-node server.js
-```
+#### **Step 5: Run Your URL Shortener**
 
-You should see `Server is running on http://localhost:3000`.
+1. **Run the Server:**
+   In the terminal, run your server:
 
-### Step 8: Test Your URL Shortener
-You can test the URL shortener using tools like Postman or cURL.
+   ```bash
+   node server.js
+   ```
 
-1. **Shorten a URL**:
+2. **Test the Shortener:**
+   Use tools like Postman or `curl` to test the API.
 
-   Use the following JSON payload in your POST request to `http://localhost:3000/shorten`:
+   - To **shorten a URL**, send a POST request to `http://localhost:3000/shorten` with a JSON body:
 
    ```json
    {
@@ -180,13 +166,19 @@ You can test the URL shortener using tools like Postman or cURL.
    }
    ```
 
-   You should receive a response with the original URL and the shortened URL.
+   - To **access the shortened URL**, use the returned short URL in your browser or `curl`.
 
-2. **Access the Shortened URL**:
+### Final Steps
 
-   In your browser or using a cURL command, visit the shortened URL returned in the response to verify it redirects to the original URL.
+- **Accessing the API**: You can test your API endpoints using Postman or `curl` commands.
+  
+- **Checking MongoDB**: Use the MongoDB shell or a GUI tool to check the entries in your database if needed.
 
-### Conclusion
-You now have a basic URL shortener set up on your Debian 11 VPS with expiration dates for the shortened URLs. The URLs will automatically expire 30 days after they are created, thanks to the `expires` property in the Mongoose schema. 
+### Troubleshooting
 
-If you encounter any issues or need further customization, feel free to ask!
+If you run into any specific issues, please share:
+- The error message you encounter.
+- The commands you executed.
+- Your configuration details (like your `server.js` file, if you’ve modified it).
+
+Let's tackle this together step by step. If something doesn’t work, just let me know where you’re stuck!
