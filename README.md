@@ -1,266 +1,192 @@
-To run your URL shortener with expiration functionality on a VPS running Ubuntu 20.04 and ensure that URLs expire on a monthly basis, you need to:
+To install a URL shortening service with expiration dates on a Debian 11 VPS, you can create your own simple URL shortener using Node.js with Express and MongoDB, or you can use an existing open-source project. Here, I'll guide you through setting up a basic URL shortener from scratch. 
 
-1. **Set up the application** to handle URL shortening with expiration.
-2. **Schedule a cleanup job** that runs monthly to remove expired URLs.
-3. **Run the application in the background** using tools like **PM2** to keep the server running after you close the terminal.
+### Step-by-Step Guide to Create a URL Shortener with Expiration Dates
 
-### Step-by-Step Guide:
+#### Prerequisites
+1. **Node.js**: Ensure that you have Node.js installed on your Debian 11 system.
+2. **MongoDB**: You can install MongoDB locally or use a cloud database service.
+3. **npm**: This usually comes with Node.js.
 
-#### 1. **Set Up the Node.js Application (ShortURL with Expiration)**
+#### Step 1: Update Your System
+First, ensure your Debian system is up to date:
 
-First, you need to install Node.js and MongoDB on your Ubuntu VPS.
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
 
-##### Install Node.js and MongoDB
+#### Step 2: Install Node.js and npm
+If you haven't installed Node.js and npm, you can do so with the following commands:
 
-1. **Update your package list:**
+```bash
+# Install curl if not already installed
+sudo apt install -y curl
+
+# Install Node.js from NodeSource (LTS version 18)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+#### Step 3: Install MongoDB
+You can install MongoDB using the following commands:
+
+```bash
+# Import the public key used by the package management system
+wget -qO - https://www.mongodb.org/static/pgp/server-5.0.asc | sudo apt-key add -
+
+# Create a list file for MongoDB
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/5.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-5.0.list
+
+# Reload the local package database
+sudo apt update
+
+# Install MongoDB
+sudo apt install -y mongodb-org
+```
+
+After installing MongoDB, start and enable it:
+
+```bash
+sudo systemctl start mongod
+sudo systemctl enable mongod
+```
+
+#### Step 4: Set Up Your URL Shortener Project
+1. **Create a project directory**:
 
    ```bash
-   sudo apt update && sudo apt upgrade -y
+   mkdir shorturl && cd shorturl
    ```
 
-2. **Install Node.js:**
-
-   ```bash
-   curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
-   sudo apt install -y nodejs
-   ```
-
-3. **Install MongoDB:**
-
-   Add the MongoDB repository and install MongoDB:
-
-   ```bash
-   wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
-   echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
-   sudo apt update
-   sudo apt install -y mongodb-org
-   ```
-
-4. **Start MongoDB and ensure it starts on boot:**
-
-   ```bash
-   sudo systemctl start mongod
-   sudo systemctl enable mongod
-   ```
-
-5. **Install PM2** (optional but recommended to keep your Node.js app running in the background):
-
-   ```bash
-   sudo npm install -g pm2
-   ```
-
-##### Create Your Node.js ShortURL App
-
-1. **Set up the project folder:**
-
-   ```bash
-   mkdir shorturl-expiry
-   cd shorturl-expiry
-   ```
-
-2. **Initialize the project:**
+2. **Initialize a new Node.js project**:
 
    ```bash
    npm init -y
    ```
 
-3. **Install necessary packages:**
+3. **Install Required Packages**:
 
    ```bash
-   npm install express mongoose nanoid
+   npm install express mongoose nanoid body-parser dotenv
    ```
 
-4. **Create `server.js` file:**
+   - `express`: Framework for building web applications.
+   - `mongoose`: MongoDB object modeling tool.
+   - `nanoid`: For generating unique IDs.
+   - `body-parser`: Middleware to parse incoming request bodies.
+   - `dotenv`: For managing environment variables.
 
-   Here's a simple URL shortener application that sets the expiration of the URLs to 30 days (monthly expiration):
+#### Step 5: Create the Main Application File
+1. **Create a file named `server.js`**:
 
    ```bash
-   nano server.js
+   touch server.js
    ```
 
-   **Add the following code to `server.js`:**
+2. **Edit `server.js` and add the following code**:
 
-   ```javascript
-   const express = require('express');
-   const mongoose = require('mongoose');
-   const { nanoid } = require('nanoid');
-   const app = express();
+```javascript
+import express from 'express';
+import mongoose from 'mongoose';
+import { nanoid } from 'nanoid';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
 
-   mongoose.connect('mongodb://localhost:27017/shorturl', { useNewUrlParser: true, useUnifiedTopology: true });
+dotenv.config();
 
-   const urlSchema = new mongoose.Schema({
-       originalUrl: { type: String, required: true },
-       shortUrl: { type: String, required: true },
-       createdAt: { type: Date, default: Date.now },
-       expiresAt: { type: Date, required: true }
-   });
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-   const Url = mongoose.model('Url', urlSchema);
+// Middleware
+app.use(bodyParser.json());
 
-   app.use(express.json());
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('MongoDB connected'))
+    .catch(err => console.log(err));
 
-   // Route to create a short URL with monthly expiration
-   app.post('/shorten', async (req, res) => {
-       const { originalUrl } = req.body;
-       const shortUrlCode = nanoid(8);
+// URL Schema
+const urlSchema = new mongoose.Schema({
+    originalUrl: String,
+    shortUrl: String,
+    createdAt: { type: Date, default: Date.now, expires: '30d' }, // URL expires in 30 days
+});
 
-       // Set expiration to 30 days from now
-       const expiresAt = new Date();
-       expiresAt.setDate(expiresAt.getDate() + 30);
+const Url = mongoose.model('Url', urlSchema);
 
-       const newUrl = new Url({
-           originalUrl,
-           shortUrl: shortUrlCode,
-           expiresAt
-       });
+// Create Short URL
+app.post('/shorten', async (req, res) => {
+    const { originalUrl } = req.body;
 
-       await newUrl.save();
-       res.json({ shortUrl: `http://your-vps-ip/${shortUrlCode}`, expiresAt });
-   });
+    const shortUrl = nanoid(8); // Generate a short ID
+    const newUrl = new Url({ originalUrl, shortUrl });
+    
+    await newUrl.save();
 
-   // Route to redirect to the original URL
-   app.get('/:shortUrl', async (req, res) => {
-       const { shortUrl } = req.params;
-       const urlEntry = await Url.findOne({ shortUrl });
+    res.json({ originalUrl, shortUrl: `http://localhost:${PORT}/${shortUrl}` });
+});
 
-       if (!urlEntry) {
-           return res.status(404).send('URL not found');
-       }
+// Redirect to original URL
+app.get('/:shortUrl', async (req, res) => {
+    const { shortUrl } = req.params;
+    const urlEntry = await Url.findOne({ shortUrl });
 
-       // Check if the URL has expired
-       if (new Date() > urlEntry.expiresAt) {
-           return res.status(410).send('This URL has expired');
-       }
+    if (urlEntry) {
+        res.redirect(urlEntry.originalUrl);
+    } else {
+        res.status(404).send('URL not found');
+    }
+});
 
-       res.redirect(urlEntry.originalUrl);
-   });
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
+```
 
-   // Start the server
-   const PORT = process.env.PORT || 3000;
-   app.listen(PORT, () => {
-       console.log(`Server running on port ${PORT}`);
-   });
-   ```
+#### Step 6: Set Up Environment Variables
+1. **Create a `.env` file in your project directory**:
 
-5. **Save the file** and exit (in nano, press `CTRL + O`, then `ENTER`, and `CTRL + X`).
+```bash
+touch .env
+```
 
-6. **Start the Node.js app:**
+2. **Edit the `.env` file and add your MongoDB connection string**:
 
-   Using **PM2** (recommended):
+```
+MONGODB_URI=mongodb://localhost:27017/shorturl
+PORT=3000
+```
 
-   ```bash
-   pm2 start server.js
-   pm2 save
-   ```
+#### Step 7: Start Your Server
+Run your server:
 
-   Using **Node.js** directly (not persistent after logout):
+```bash
+node server.js
+```
 
-   ```bash
-   node server.js
-   ```
+You should see `Server is running on http://localhost:3000`.
 
-Now, your application is running, and it will create shortened URLs that expire after 30 days.
+### Step 8: Test Your URL Shortener
+You can test the URL shortener using tools like Postman or cURL.
 
----
+1. **Shorten a URL**:
 
-#### 2. **Set Up a Monthly Cleanup Job**
+   Use the following JSON payload in your POST request to `http://localhost:3000/shorten`:
 
-You will want to automatically remove expired URLs. This can be achieved using a **cron job** that runs a script to delete expired entries from the MongoDB database every month.
-
-1. **Create a cleanup script** to delete expired URLs:
-
-   Create a new file `cleanup.js`:
-
-   ```bash
-   nano cleanup.js
-   ```
-
-   **Add the following code:**
-
-   ```javascript
-   const mongoose = require('mongoose');
-
-   // Connect to MongoDB
-   mongoose.connect('mongodb://localhost:27017/shorturl', { useNewUrlParser: true, useUnifiedTopology: true });
-
-   // Define the URL schema
-   const urlSchema = new mongoose.Schema({
-       originalUrl: String,
-       shortUrl: String,
-       createdAt: { type: Date, default: Date.now },
-       expiresAt: { type: Date, required: true }
-   });
-
-   const Url = mongoose.model('Url', urlSchema);
-
-   // Function to delete expired URLs
-   async function deleteExpiredUrls() {
-       const result = await Url.deleteMany({ expiresAt: { $lt: new Date() } });
-       console.log(`${result.deletedCount} expired URLs deleted`);
-       mongoose.connection.close();
+   ```json
+   {
+       "originalUrl": "https://www.example.com"
    }
-
-   deleteExpiredUrls();
    ```
 
-   Save and exit (`CTRL + O`, then `ENTER`, and `CTRL + X`).
+   You should receive a response with the original URL and the shortened URL.
 
-2. **Test the cleanup script:**
+2. **Access the Shortened URL**:
 
-   Run the script manually to ensure it works:
-
-   ```bash
-   node cleanup.js
-   ```
-
-   It should delete any expired URLs from your MongoDB database and print how many were deleted.
-
-3. **Schedule the cleanup script to run monthly:**
-
-   Use **cron** to schedule the cleanup script to run once a month.
-
-   Open the cron editor:
-
-   ```bash
-   crontab -e
-   ```
-
-   Add the following line to run the cleanup script on the first day of every month at midnight:
-
-   ```bash
-   0 0 1 * * /usr/bin/node /path/to/your/project/cleanup.js >> /path/to/your/project/cleanup.log 2>&1
-   ```
-
-   This schedules the cleanup script to run every month. Make sure to replace `/path/to/your/project/` with the actual path to your project directory.
-
-4. **Save the cron job** and exit the editor.
-
----
-
-### 3. **Access Your URL Shortener**
-
-- To **create a short URL**, you can use tools like `curl` or Postman to send a POST request to your VPS:
-
-   ```bash
-   curl -X POST http://your-vps-ip:3000/shorten \
-   -H "Content-Type: application/json" \
-   -d '{"originalUrl": "https://example.com"}'
-   ```
-
-- To **access a shortened URL**, visit the short URL, for example:
-
-   ```bash
-   http://your-vps-ip/abcd1234
-   ```
-
-If the URL has expired, it will return a "410: URL has expired" message.
-
----
+   In your browser or using a cURL command, visit the shortened URL returned in the response to verify it redirects to the original URL.
 
 ### Conclusion
+You now have a basic URL shortener set up on your Debian 11 VPS with expiration dates for the shortened URLs. The URLs will automatically expire 30 days after they are created, thanks to the `expires` property in the Mongoose schema. 
 
-1. **Node.js and MongoDB** handle your URL shortening with monthly expiration.
-2. **PM2** keeps the app running in the background.
-3. **Cron jobs** clean up expired URLs every month.
-
-By following this guide, you have set up a fully functional short URL application that automatically manages and deletes expired URLs every month on an Ubuntu 20.04 VPS. Let me know if you encounter any issues!
+If you encounter any issues or need further customization, feel free to ask!
